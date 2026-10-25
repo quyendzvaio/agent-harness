@@ -1,0 +1,23 @@
+# Q3 link 1: how code reads an environment variable. Group `var` is the variable name, optional group
+# `default` the default written next to it (a quoted literal), optional `name` the identifier it is
+# assigned to on the same line. Settings classes (pydantic BaseSettings) are handled in code.
+- exts: [.py]
+  pattern: '(?:(?P<name>\b[A-Za-z_]\w*)\s*(?::[^=\n]+)?=\s*)?\b(?:os\.)?(?:getenv|environ\.get)\(\s*["''](?P<var>[A-Za-z_][A-Za-z0-9_]*)["''](?:\s*,\s*(?P<default>"[^"\n]*"|''[^''\n]*''))?'
+- exts: [.py]
+  pattern: '(?:(?P<name>\b[A-Za-z_]\w*)\s*(?::[^=\n]+)?=\s*)?\benviron\[\s*["''](?P<var>[A-Za-z_][A-Za-z0-9_]*)["'']\s*\]'
+- exts: [.js, .jsx, .ts, .tsx, .mjs, .cjs, .vue, .svelte]
+  pattern: '(?:(?:const|let|var)\s+(?P<name>[A-Za-z_$][\w$]*)\s*(?::[^=\n]+)?=\s*)?\b(?:process\.env|import\.meta\.env)(?:\.(?P<var>[A-Za-z_][A-Za-z0-9_]*)|\[\s*["''](?P<var2>[A-Za-z_][A-Za-z0-9_]*)["'']\s*\])(?:\s*(?:\?\?|\|\|)\s*(?P<default>"[^"\n]*"|''[^''\n]*''|`[^`$\n]*`))?'
+- exts: [.go]
+  pattern: '(?:(?P<name>\b[A-Za-z_]\w*)\s*:?=\s*)?\bos\.(?:Getenv|LookupEnv)\(\s*"(?P<var>[A-Za-z_][A-Za-z0-9_]*)"'
+- exts: [.go]
+  pattern: '\bmustMapEnv\(\s*&(?P<name>[\w.]+)\s*,\s*"(?P<var>[A-Za-z_][A-Za-z0-9_]*)"'
+- exts: [.go]
+  pattern: '\bviper\.Get\w*\(\s*"(?P<var>[A-Za-z_][A-Za-z0-9_.]*)"'
+- exts: [.cs]
+  pattern: '(?:Configuration|configuration|config)\[\s*"(?P<var>[A-Za-z_][A-Za-z0-9_:]*)"\s*\]|Environment\.GetEnvironmentVariable\(\s*"(?P<var2>[A-Za-z_][A-Za-z0-9_]*)"'
+- exts: [.java, .kt]
+  pattern: 'System\.getenv\(\s*"(?P<var>[A-Za-z_][A-Za-z0-9_]*)"|@Value\(\s*"\$\{(?P<var2>[A-Za-z_][A-Za-z0-9_.]*)(?::(?P<default>[^}]*))?\}'
+- exts: [.rs]
+  pattern: '\benv::var\(\s*"(?P<var>[A-Za-z_][A-Za-z0-9_]*)"'
+- exts: [.rb]
+  pattern: 'ENV(?:\.fetch\(\s*|\[\s*)["''](?P<var>[A-Za-z_][A-Za-z0-9_]*)["''](?:\s*,\s*(?P<default>"[^"\n]*"|''[^''\n]*''))?'

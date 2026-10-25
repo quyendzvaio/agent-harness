@@ -1,0 +1,23 @@
+{
+  "owner": "acme",
+  "repo": "tiny-api",
+  "meta": {
+    "full_name": "acme/tiny-api",
+    "description": "A tiny FastAPI service",
+    "default_branch": "main",
+    "stargazers_count": 42,
+    "license": {
+      "spdx_id": "MIT"
+    }
+  },
+  "files": {
+    "README.md": "# tiny-api\n\nA tiny FastAPI service that stores notes.\n\n## Run\n\nuvicorn tiny_api.main:app",
+    "pyproject.toml": "[project]\nname = \"tiny-api\"\nversion = \"0.1.0\"\ndependencies = [\"fastapi>=0.110\", \"sqlalchemy>=2\", \"pydantic\"]\n\n[project.scripts]\ntiny-api = \"tiny_api.main:app\"\n",
+    "src/tiny_api/__init__.py": "",
+    "src/tiny_api/main.py": "from fastapi import FastAPI\n\nfrom tiny_api.routes import router\n\napp = FastAPI()\napp.include_router(router)\n",
+    "src/tiny_api/routes.py": "from fastapi import APIRouter\n\nfrom tiny_api.store import NoteStore\n\nrouter = APIRouter()\nstore = NoteStore()\n\n\n@router.post('/notes')\ndef create(text: str) -> dict:\n    return store.add(text)\n",
+    "src/tiny_api/store.py": "class NoteStore:\n    def __init__(self) -> None:\n        self._notes: list[str] = []\n\n    def add(self, text: str) -> dict:\n        self._notes.append(text)\n        return {'id': len(self._notes), 'text': text}\n",
+    "tests/test_store.py": "from tiny_api.store import NoteStore\n\n\ndef test_add():\n    assert NoteStore().add('x')['id'] == 1\n",
+    "node_modules/left-pad/index.js": "module.exports = 1\n"
+  }
+}

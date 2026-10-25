@@ -1,0 +1,133 @@
+# Q4: signatures of both ends of each channel kind. Regexes run per line on files of the listed extensions.
+# Named groups used by the code:
+#   owner  - variable holding the router/app;   method - HTTP verb;  path - route/request path
+#   prefix - path prefix;  ident - identifier holding a base URL;  topic - topic/queue expression
+#   service - gRPC service name
+PY: &py [.py]
+JS: &js [.js, .jsx, .ts, .tsx, .mjs, .cjs]
+GO: &go [.go]
+
+# --- HTTP server ------------------------------------------------------------------------------------
+router_prefix:  # router object created with a prefix
+  - exts: *py
+    pattern: '(?P<owner>\b[A-Za-z_]\w*)\s*=\s*(?:APIRouter|Blueprint)\((?P<args>[^)]*)\)'
+    prefix_arg: '(?:prefix|url_prefix)\s*=\s*["''](?P<prefix>[^"'']*)["'']'
+  - exts: *js
+    pattern: '(?:const|let|var)\s+(?P<owner>[A-Za-z_$][\w$]*)\s*=\s*(?:express\.Router|Router)\((?P<args>[^)]*)\)'
+    prefix_arg: 'prefix\s*:\s*["''](?P<prefix>[^"'']*)["'']'
+router_mount:  # router mounted under a prefix; `owner` may be `module.router`
+  - exts: *py
+    pattern: '\.(?:include_router|register_blueprint)\(\s*(?P<owner>[A-Za-z_][\w.]*)(?P<args>[^)]*)\)'
+    prefix_arg: '(?:prefix|url_prefix)\s*=\s*["''](?P<prefix>[^"'']*)["'']'
+  - exts: *js
+    pattern: '\b(?:app|router|server)\.use\(\s*["''](?P<prefix>/[^"'']*)["'']\s*,\s*(?P<owner>[A-Za-z_$][\w$.]*)'
+server_routes:
+  - exts: *py
+    pattern: '@(?P<owner>[A-Za-z_]\w*)\.(?P<method>get|post|put|patch|delete|options|head|websocket|api_route|route)\(\s*[rf]?["''](?P<path>[^"'']*)["'']'
+  - exts: *js
+    pattern: '\b(?P<owner>app|router|server|api|[a-z]\w*Router)\.(?P<method>get|post|put|patch|delete|all)\(\s*["''`](?P<path>/[^"''`]*)["''`]'
+  - exts: *go
+    pattern: '\.(?P<method>HandleFunc|Handle|GET|POST|PUT|PATCH|DELETE|Get|Post|Put|Patch|Delete)\(\s*"(?P<path>/[^"]*)"'
+# Handlers that stream to the client (Q4 realtime): looked for in the lines after a route.
+realtime_server: '\b(StreamingResponse|EventSourceResponse|text/event-stream|WebSocket)\b'
+# Dependencies that mark a route as authenticated (Q8).
+auth_markers: 'Depends\(\s*(?:get_)?(?:current|verify|require|auth|admin|security|check)\w*|Security\(|login_required|@requires_auth|authenticate|passport\.authenticate|jwtMiddleware|requireAuth'
+# Paths that are operational by convention: a route without callers here is not a Q9 violation.
+ops_paths: '^/(healthz?|readyz?|livez?|ping|metrics|docs|redoc|openapi\.json|favicon\.ico|status)?/?$'
+
+# --- HTTP client ------------------------------------------------------------------------------------
+client_base:  # a client object whose base URL is held by `ident`
+  - exts: *py
+    pattern: '\b(?:httpx\.(?:Async)?Client|AsyncClient|Client|aiohttp\.ClientSession|ClientSession)\([^)\n]*\bbase_url\s*=\s*(?P<ident>[A-Za-z_][\w.]*)'
+  - exts: *js
+    pattern: '\baxios\.create\(\s*\{[^}\n]*\bbaseURL\s*:\s*(?P<ident>[A-Za-z_$][\w$.]*)'
+client_relative_call:  # a call with a relative path on such a client
+  - exts: *py
+    pattern: '\.(?P<method>get|post|put|patch|delete|request|stream)\(\s*f?["''](?P<path>/[^"'']*)["'']'
+  - exts: *js
+    pattern: '\.(?P<method>get|post|put|patch|delete)\(\s*["''`](?P<path>/[^"''`]*)["''`]'
+client_composed_url:  # `f"{BASE}/x"`, `${BASE}/x`, `BASE + "/x"`
+  - exts: *py
+    pattern: '\{(?P<ident>[A-Za-z_][\w.]*)(?:\.rstrip\([^)]*\))?\}(?P<path>/[^"''\s]*)'
+  - exts: *py
+    pattern: '(?P<ident>\b[A-Za-z_][\w.]*)\s*\+\s*["''](?P<path>/[^"'']*)["'']'
+  - exts: *js
+    pattern: '\$\{(?P<ident>[A-Za-z_$][\w$.]*)\}(?P<path>/[^`"''\s]*)'
+  - exts: *js
+    pattern: '(?P<ident>\b[A-Za-z_$][\w$.]*)\s*\+\s*["''](?P<path>/[^"'']*)["'']'
+  - exts: *go
+    pattern: '(?P<ident>\b[A-Za-z_][\w.]*)\s*\+\s*"(?P<path>/[^"]*)"'
+# fetch(`${BASE}${path}`) inside a function: that function is a request wrapper bound to BASE.
+js_fetch_wrapper: '\bfetch\(\s*`\$\{(?P<ident>[A-Za-z_$][\w$.]*)\}\$\{[A-Za-z_$][\w$]*\}'
+js_function_def: '(?:function\s+(?P<a>[A-Za-z_$][\w$]*)\s*[<(]|(?:const|let)\s+(?P<b>[A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:<[^>]*>\s*)?\()'
+js_wrapper_call: '\b(?P<fn>[A-Za-z_$][\w$]*)\s*(?:<[^()]*?>)?\(\s*["''`](?P<path>/[^"''`]*)["''`]'
+realtime_client: '\bnew\s+(EventSource|WebSocket)\s*\('
+
+# --- queues -----------------------------------------------------------------------------------------
+queue_producers:
+  - exts: *py
+    pattern: '\.(?:send_and_wait|send)\(\s*(?P<topic>[^,)\n]+)'
+    requires: '\b(aiokafka|kafka|confluent_kafka)\b'
+  - exts: *py
+    pattern: '\.produce\(\s*(?P<topic>[^,)\n]+)'
+    requires: '\bconfluent_kafka\b'
+  - exts: *py
+    pattern: '\.basic_publish\([^)]*routing_key\s*=\s*(?P<topic>[^,)\n]+)'
+    requires: '\bpika\b|\baio_pika\b'
+  - exts: *py
+    pattern: '\.(?:publish|xadd)\(\s*(?P<topic>[^,)\n]+)'
+    requires: '\bredis\b|\bnats\b'
+  - exts: *js
+    pattern: '\.send\(\s*\{\s*topic\s*:\s*(?P<topic>[^,}\n]+)'
+    requires: 'kafkajs'
+  - exts: *js
+    pattern: '\.publish\(\s*(?P<topic>[^,)\n]+)'
+    requires: '\bnats\b|amqplib|ioredis|\bredis\b'
+  - exts: *go
+    pattern: '\bTopic\s*:\s*(?P<topic>[^,}\n]+)'
+    requires: 'sarama|segmentio/kafka-go|confluent-kafka-go'
+queue_consumers:
+  - exts: *py
+    pattern: '\b(?:AIOKafkaConsumer|KafkaConsumer)\(\s*(?P<topic>(?!bootstrap|group|loop)[^,)\n=]+)[,)]'
+  - exts: *py
+    pattern: '\.subscribe\(\s*\[?(?P<topic>[^\])\n,]+)'
+    requires: '\b(aiokafka|kafka|confluent_kafka|redis|nats)\b'
+  - exts: *py
+    pattern: '\.basic_consume\([^)]*queue\s*=\s*(?P<topic>[^,)\n]+)'
+    requires: '\bpika\b|\baio_pika\b'
+  - exts: *js
+    pattern: '\.subscribe\(\s*\{\s*topics?\s*:\s*\[?(?P<topic>[^,\]}\n]+)'
+    requires: 'kafkajs'
+  - exts: *js
+    pattern: '\.subscribe\(\s*(?P<topic>["''`][^"''`]+["''`])'
+    requires: '\bnats\b|ioredis|\bredis\b'
+  - exts: *go
+    pattern: '\bTopic\s*:\s*(?P<topic>[^,}\n]+)'
+    requires: 'kafka\.NewReader|ConsumerGroup'
+
+# --- gRPC -------------------------------------------------------------------------------------------
+proto_service: '^\s*service\s+(?P<service>\w+)\s*\{'
+grpc_servers:
+  - {exts: *go, pattern: '\bRegister(?P<service>\w+)Server\('}
+  - {exts: *py, pattern: '\badd_(?P<service>\w+)Servicer_to_server\('}
+  - {exts: *js, pattern: '\baddService\(\s*[\w.]*?\.?(?P<service>\w+Service)\.service'}
+  - {exts: [.cs], pattern: '\bMapGrpcService<(?P<service>\w+)>'}
+  - {exts: [.java, .kt], pattern: '\b(?P<service>\w+)Grpc\.\w+ImplBase\b'}
+grpc_clients:
+  - {exts: *go, pattern: '\bNew(?P<service>\w+)Client\('}
+  - {exts: *py, pattern: '\b(?P<service>\w+)Stub\('}
+  - {exts: *js, pattern: '\bnew\s+[\w.]+\.(?P<service>\w+Service)\('}
+  - {exts: [.cs], pattern: '\bnew\s+(?:\w+\.)?(?P<service>\w+)\.\w+Client\('}
+  - {exts: [.java, .kt], pattern: '\b(?P<service>\w+)Grpc\.new\w*Stub\('}
+
+# --- data ownership (Q5) ----------------------------------------------------------------------------
+db_writes: '\bsession\.(add|add_all|delete|merge|commit)\(|\b(INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM)\b|\.(insert_one|insert_many|update_one|update_many|delete_one|delete_many|bulk_write|upsert)\(|\.(create|update|upsert|delete)\(\s*\{\s*data\b|\bput_object\(|\bupload_file\(|\bsave_local\(|\.save\(\)|\bopen\([^)]*["''][wa]b?\+?["'']'
+db_reads: '\bsession\.(get|execute|scalar|scalars)\(|\bselect\(|\bSELECT\b|\.(find|find_one|find_many|findMany|findUnique|search|query)\(|\bget_object\(|\bdownload_file\(|\bload_local\('
+schema_markers: ['alembic/', 'migrations/', 'prisma/schema.prisma', 'db/migrate/']
+
+# --- reliability and state (Q7, Q8) -----------------------------------------------------------------
+stateful: '^\s*global\s+\w+|^@(functools\.)?(lru_cache|cache)\b|^_?[a-z_]+\s*(?::[^=\n]+)?=\s*(None|\{\}|dict\(\))\s*$'
+startup_hooks: '@app\.on_event\(\s*["'']startup|\blifespan\s*=|@asynccontextmanager\s*\n\s*async def lifespan|app\.listen\('
+retry_markers: '\b(tenacity|retry|backoff|Retry\(|max_retries|retries)\b'
+timeout_arg: '\btimeout\s*=\s*(?P<value>[\w.]+)'
+secret_names: '(KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL)S?$'

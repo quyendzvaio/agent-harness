@@ -1,0 +1,9 @@
+# Q1: an infrastructure service (no `build`, only `image`) is classified by its image name.
+# `match` is a regex on the image's last path segment without tag, e.g. "apache/kafka:3.9.0" -> "kafka".
+# First match wins. Source: rules.md Q1 of the reading-system-architecture method.
+- {match: '^(postgres|postgis|pgvector|timescaledb|mysql|mariadb|mongo|mongodb|cockroach|clickhouse|cassandra|scylla|neo4j|couchdb|surrealdb|mssql)', kind: db}
+- {match: '^(redis|valkey|keydb|memcached|dragonfly)', kind: cache}
+- {match: '^(kafka|cp-kafka|redpanda|rabbitmq|nats|activemq|pulsar|zookeeper|cp-zookeeper|kafka-ui)', kind: queue}
+- {match: '^(minio|localstack|azurite|fake-gcs-server|seaweedfs)', kind: storage}
+- {match: '^(qdrant|weaviate|milvus|chroma|chromadb|elasticsearch|opensearch|meilisearch|typesense|vespa)', kind: vector-store}
+- {match: '^(nginx|traefik|caddy|envoy|haproxy|kong|istio)', kind: gateway}

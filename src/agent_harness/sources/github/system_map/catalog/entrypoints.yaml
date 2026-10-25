@@ -1,0 +1,18 @@
+# Q2: the role of a process comes from its entrypoint (compose `command` > Dockerfile CMD/ENTRYPOINT >
+# Procfile/k8s command > package.json `start`). Regexes on the command line; first match wins.
+roles:
+  - {match: '\bcelery\b.*\bbeat\b|\bcrond?\b|\bsupercronic\b', kind: scheduler}
+  - {match: '\bcelery\b.*\bworker\b|\brq\s+worker\b|\barq\b|\bdramatiq\b|\bfaust\b|\bsidekiq\b', kind: worker}
+  - {match: '\blanggraph\s+(dev|up)\b|\blocust\b|\bk6\s+run\b|\bartillery\b', kind: agent}
+  - {match: '\bnext\s+(start|dev)\b|\bvite\b|\bvitepress\b|\bnuxt\b|\breact-scripts\s+start\b|\bserve\s+-s\b|\bnginx\b|\bastro\b', kind: web}
+  - {match: '\b(uvicorn|gunicorn|hypercorn|daphne|granian)\b|\bfastapi\s+(run|dev)\b|\bflask\s+run\b|manage\.py\s+runserver|\brails\s+s(erver)?\b|\bpuma\b|\bphp\s+-S\b', kind: http-server}
+  - {match: '\balembic\s+upgrade\b|\bprisma\s+migrate\b|\bmanage\.py\s+migrate\b|\bknex\s+migrate\b|\bseed\b', kind: batch-job}
+# When the entrypoint is a plain interpreter call (`python worker.py`, `node server.js`, a Go binary),
+# the entry file (or, failing that, the whole code dir) is searched for these markers; first match wins.
+code_markers:
+  - {match: '\b(BlockingScheduler|AsyncIOScheduler|BackgroundScheduler)\b|schedule\.every\(|\bcron\.schedule\(|@Scheduled\b', kind: scheduler}
+  - {match: '\b(AIOKafkaConsumer|KafkaConsumer|Consumer)\(|\.basic_consume\(|consumer\.(poll|subscribe|run)\(|\.subscribe\(\s*\{\s*topics?\b', kind: worker}
+  - {match: '\bFastAPI\(|\bFlask\(|\bStarlette\(|\bexpress\(\)|\bFastify\(|\bfastify\(|http\.ListenAndServe|\bgin\.(Default|New)\(|\bchi\.NewRouter\(|\bgrpc\.NewServer\(|\bgrpc\.server\(|\bnew\s+grpc\.Server\(|\bcreateServer\(|\baiohttp\.web\b|\bWebApplication\.Create|\bMapGrpcService\b|\bCreateDefaultBuilder\b|\bUseKestrel\b|\bServerBuilder\.forPort\b|\bNettyServerBuilder\b|\bSpringApplication\.run\b|\bnew\s+grpc\.Server\(|\bserver\.bindAsync\(', kind: http-server}
+  - {match: '\bwhile\s+True\b|\bwhile\s*\(\s*true\s*\)|\bsetInterval\(|\bfor\s*\{', kind: agent}
+# A directory that ships one of these files is a browser application even when it is started with `node server.js`.
+web_markers: ['next.config.js', 'next.config.mjs', 'next.config.ts', 'vite.config.ts', 'vite.config.js', 'nuxt.config.ts', 'angular.json', 'svelte.config.js', 'astro.config.mjs']

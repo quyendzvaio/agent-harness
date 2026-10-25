@@ -1,0 +1,59 @@
+# Host ports avoid 5432 (already used by another project on the dev machine).
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: agent
+      POSTGRES_PASSWORD: agent
+      POSTGRES_DB: agent
+    ports: ["5433:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent -d agent"]
+      interval: 3s
+      retries: 20
+
+  postgres-test:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: agent
+      POSTGRES_PASSWORD: agent
+      POSTGRES_DB: agent_test
+    ports: ["5434:5432"]
+    tmpfs: [/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent -d agent_test"]
+      interval: 2s
+      retries: 20
+
+  minio:
+    # Pinned: MinIO no longer publishes community images on Docker Hub.
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    pull_policy: missing
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [miniodata:/data]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 3s
+      retries: 20
+
+  api:
+    build: .
+    profiles: [app]
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      DATABASE_URL: postgresql+psycopg://agent:agent@postgres:5432/agent
+      MINIO_ENDPOINT: minio:9000
+    ports: ["8000:8000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      minio: {condition: service_healthy}
+
+volumes:
+  pgdata:
+  miniodata:

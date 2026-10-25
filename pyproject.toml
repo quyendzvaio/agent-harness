@@ -1,0 +1,61 @@
+[project]
+name = "agent-harness"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "quyendzvaio", email = "nquyenworkspace@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.20.0",
+    "fastapi>=0.156.5",
+    "httpx>=0.28.1",
+    "langchain>=1.4.6",
+    "langchain-openai>=1.1",
+    "langgraph>=1.2.16",
+    "langgraph-checkpoint-postgres>=3.2.0",
+    "minio>=7.2.20",
+    "psycopg-pool>=3.3.3",
+    "psycopg[binary]>=3",
+    "pydantic-settings>=2.16.1",
+    "python-dotenv>=1.2.4",
+    "pyyaml>=6.0.3",
+    "sqlalchemy[asyncio]>=2",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[project.scripts]
+agent-harness = "agent_harness.interfaces.cli:main"
+
+[project.optional-dependencies]
+graph = [
+    "graphifyy==0.9.93",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.4,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "respx>=0.23.1",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+pythonpath = ["tests"]
+markers = [
+    "postgres: needs TEST_DATABASE_URL (docker compose up postgres-test)",
+    "minio: needs TEST_MINIO_ENDPOINT (docker compose up minio)",
+    "live: calls the real LLM endpoint/GitHub; run with -m live",
+]
+addopts = "-m 'not live'"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
