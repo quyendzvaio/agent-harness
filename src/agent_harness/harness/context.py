@@ -33,6 +33,9 @@ class RunContext:
     artifacts: list[dict[str, Any]] = field(default_factory=list)
     #: Markdown (mermaid block + step table) of each diagram drawn this turn; see DiagramFinalizer.
     diagrams: list[str] = field(default_factory=list)
+    #: Markdown a tool already streamed as the start of the answer (e.g. the system map's tables); see
+    #: AnswerPrefixFinalizer, which keeps it at the start of the persisted answer.
+    answer_prefix: list[str] = field(default_factory=list)
     #: Highest budget a skill may raise this turn to; None = limits cannot be raised.
     limit_ceiling: ExecutionLimits | None = None
     #: Working notes the model saved with `save_note`; re-injected into every system prompt so they

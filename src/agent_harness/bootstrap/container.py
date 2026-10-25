@@ -22,6 +22,7 @@ from agent_harness.application.skill_service import SkillService
 from agent_harness.capabilities.diagram_tools import build_diagram_tools
 from agent_harness.capabilities.export_tools import build_export_tools
 from agent_harness.capabilities.finalizers import (
+    AnswerPrefixFinalizer,
     CitationFinalizer,
     DiagramFinalizer,
     SkillFinalHook,
@@ -146,7 +147,8 @@ async def build_container(settings: Settings, overrides: Overrides | None = None
         chat = ChatService(
             uow_factory=uow_factory,
             runtime=AgentRuntime(
-                engine, [SkillFinalHook(hooks), DiagramFinalizer(), CitationFinalizer(verifier=o.claim_verifier)]
+                engine,
+                [SkillFinalHook(hooks), AnswerPrefixFinalizer(), DiagramFinalizer(), CitationFinalizer(verifier=o.claim_verifier)],
             ),
             limits=settings.limits,
             limit_ceiling=settings.limits_ceiling,
@@ -236,6 +238,7 @@ async def _langchain_engine(settings: Settings, o: Overrides, executor: ToolExec
             reasoning_effort=settings.model_reasoning_effort,
             max_output_tokens=settings.model_max_output_tokens,
             guard_output=settings.model_output_guard,
+            idle_timeout_s=settings.model_idle_timeout_s,
         )
 
     model = o.chat_model or make(settings.llm_model)

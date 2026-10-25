@@ -9,7 +9,11 @@ def test_openai_compatible_model_targets_base_url():
     assert model.openai_api_base == "https://llm.example/v1"
     assert model.model_name == "some/model"
     assert model.streaming is True and model.stream_usage is True
-    assert model.request_timeout == 120  # seconds for the openai SDK
+    assert model.max_retries == 0  # the harness retries and falls back itself
+    timeout = model.request_timeout
+    assert (timeout.read, timeout.connect) == (90, 10)  # a stalled stream fails after 90 s of silence
+    tight = openai_compatible_model("m", api_key=SecretStr("k"), base_url="https://llm.example/v1", idle_timeout_s=30)
+    assert tight.request_timeout.read == 30
 
 
 def test_openai_compatible_model_requires_key():

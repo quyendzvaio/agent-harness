@@ -42,7 +42,7 @@ async def test_diagram_tool_is_hidden_unless_the_user_asks_for_a_diagram():
     assert data_of(events, "tool_finished")[0]["status"] == "policy_denied"  # called anyway: blocked
 
 
-async def test_diagram_reaches_the_answer_even_if_the_model_does_not_copy_it():
+async def test_diagram_is_streamed_into_the_answer_as_soon_as_it_is_drawn():
     steps = [
         ToolStep("github_read_file", {"url": REPO_URL, "path": "src/tiny_api/routes.py"}),
         ToolStep("architecture_diagram", DIAGRAM),
@@ -53,10 +53,11 @@ async def test_diagram_reaches_the_answer_even_if_the_model_does_not_copy_it():
         _, events = await chat(http, ASK)
     assert [f["status"] for f in data_of(events, "tool_finished")] == ["ok", "ok"]
     answer = container.db.messages[-1].content
-    assert answer.startswith("Routes ghi vào NoteStore [E1].\n\n## Sơ đồ kiến trúc\n\n**Luồng ghi chú**")
+    assert answer.startswith("## Sơ đồ kiến trúc\n\n**Luồng ghi chú**") and answer.endswith("Routes ghi vào NoteStore [E1].")
     assert "look: handDrawn" in answer and 'n2 -->|"2. add(note)"| n3' in answer
-    appended = [t for t in data_of(events, "token") if t.get("message_id") == "diagram"]
-    assert len(appended) == 1 and "```mermaid" in appended[0]["text"]  # streamed to the client too
+    tokens = data_of(events, "token")
+    assert tokens[0]["message_id"] == "diagram-1" and "```mermaid" in tokens[0]["text"]  # before the model's text
+    assert answer == "".join(t["text"] for t in tokens)  # a reload shows what was streamed
     assert data_of(events, "citation_report")[0]["invalid"] == []
 
 
@@ -183,3 +184,27 @@ async def test_answer_without_the_requested_diagram_gets_one_reminder():
     assert "Do not write Mermaid yourself" in model.seen[2][-1].content  # the reminder
     answer = container.db.messages[-1].content
     assert "graph TD" not in answer and "look: handDrawn" in answer
+
+
+async def test_a_stalled_provider_fails_over_to_the_fallback_model():
+    calls = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        model = json.loads(request.content)["model"]
+        calls.append(model)
+        if model == "primary":
+            raise httpx2.ReadTimeout("no bytes for idle_timeout_s", request=request)
+        return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=_sse("Trả lời từ model dự phòng [E1]."))
+
+    def make(name: str) -> GuardedChatOpenAI:
+        return GuardedChatOpenAI(
+            model=name, api_key="k", base_url="https://llm.test/v1", streaming=True, max_retries=0,
+            http_async_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
+        )  # fmt: skip
+
+    container = await make_container(make_settings(model_max_retries=1), chat_model=make("primary"), fallback_models=[make("fallback")])
+    async with client(container) as http:
+        _, events = await chat(http, "tóm tắt repo")
+    assert kinds(events)[-1] == "done"
+    assert calls == ["primary", "primary", "fallback"]  # one retry of the stalled model, then the fallback
+    assert container.db.messages[-1].content == "Trả lời từ model dự phòng [E1]."

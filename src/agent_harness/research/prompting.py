@@ -30,8 +30,9 @@ def build_system_prompt(
         "đồ một luồng). Chỉ dùng `source=manual` khi map không có cạnh: node là thành phần chạy thực tế (service, "
         "worker, scheduler, DB, queue, cache, API ngoài, client), không phải từng file; đánh số luồng 1, 2.1, 2.2... "
         "theo thứ tự thực thi; mỗi cạnh trích dẫn evidence của code đã đọc (github_read_file/github_search_code) chứng "
-        "minh nó, không dùng README. Có thể vẽ một sơ đồ tổng thể và một đến hai sơ đồ luồng chính. Chèn nguyên văn "
-        "khối mermaid và bảng các bước mà tool trả về vào câu trả lời. KHÔNG tự viết code Mermaid."
+        "minh nó, không dùng README. Có thể vẽ một sơ đồ tổng thể và một đến hai sơ đồ luồng chính. Harness tự chèn sơ "
+        "đồ và bảng các bước vào câu trả lời: KHÔNG chép lại, KHÔNG lặp lại câu trả lời trước, chỉ giải thích ngắn các "
+        "bước kèm [E#]. KHÔNG tự viết code Mermaid."
         if wants_diagram
         else "Người dùng KHÔNG yêu cầu vẽ sơ đồ: không vẽ sơ đồ Mermaid/ASCII."
     )

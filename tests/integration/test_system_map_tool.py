@@ -126,3 +126,35 @@ async def test_the_skill_is_listed_with_the_map_tool_and_the_tool_survives_conte
     assert detail["allowed_tools"][0] == "github_system_map" and "5 phần" in detail["instructions"]
     assert detail["limits"]["max_tool_calls"] == 40
     assert "github_system_map" in _KEEP_TOOLS
+
+
+async def test_the_skill_gets_the_tables_streamed_into_the_answer_and_writes_only_its_verification():
+    steps = [
+        ToolStep("load_skill", {"name": "github-system-architecture"}),
+        ToolStep("github_system_map", {"url": URL}),
+        ToolStep("github_read_file", {"url": URL, "path": "services/worker/worker.py", "start_line": 1, "end_line": 30}),
+        TextStep("## Kiểm chứng\n- worker → api: xác nhận EXTRACTED [E1].\n\n## Nhận định của agent\nỔn."),
+    ]
+    container = await make_container(script=steps, github=FakeGithubClient(compose_repo.REPO))
+    async with client(container) as http:
+        _, events = await chat(http, f"kiến trúc hệ thống {URL}")
+    tokens = data_of(events, "token")
+    assert tokens[0]["message_id"] == "system_map"  # streamed before the model's own text
+    assert tokens[0]["text"].startswith("Kiến trúc ĐƯỢC KHAI BÁO từ docker-compose.yml")
+    assert "## Đọc để kiểm chứng" not in tokens[0]["text"]  # what to read next is for the model only
+    answer = container.db.messages[-1].content
+    assert answer.startswith("Kiến trúc ĐƯỢC KHAI BÁO") and answer.count("## 2. Cạnh") == 1
+    assert answer.index("## 4. Khoảng trống") < answer.index("## Kiểm chứng") < answer.index("## Nhận định")
+    assert answer == "".join(t["text"] for t in tokens)  # a reload shows what was streamed
+    assert data_of(events, "citation_report")[0]["invalid"] == []
+    invocation = next(i for i in container.db.tool_invocations if i.tool_name == "github_system_map")
+    assert invocation.status == "ok"
+
+
+async def test_without_the_skill_the_map_stays_a_tool_result():
+    steps = [ToolStep("github_system_map", {"url": URL}), TextStep("Tóm tắt [E1].")]
+    container = await make_container(script=steps, github=FakeGithubClient(compose_repo.REPO))
+    async with client(container) as http:
+        _, events = await chat(http, f"kiến trúc hệ thống {URL}")
+    assert container.db.messages[-1].content == "Tóm tắt [E1]."
+    assert not [t for t in data_of(events, "token") if t.get("message_id") == "system_map"]

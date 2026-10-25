@@ -50,7 +50,7 @@ uv run pytest -m live tests/e2e                 # gọi LLM (BASE_URL) + GitHub 
 | Giới hạn / retry | `LIMITS__*` hoặc `harness/middleware/{limits,retry}.py` | Tools, engine | S7 |
 | Database | `adapters/postgres/` (cùng port `ports/repositories.py`) | Business code | S8 (contract test) |
 | Lưu artifact (MinIO → S3/R2) | `adapters/storage/` hoặc chỉ `MINIO_ENDPOINT` | Business code | S10, S11 |
-| Provider / model / model dự phòng | `BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_FALLBACK_MODELS` (mọi API tương thích OpenAI); provider khác hẳn: `adapters/models/` | Code | S12, `tests/unit/test_models.py` |
+| Provider / model / model dự phòng | `BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_FALLBACK_MODELS`, `MODEL_IDLE_TIMEOUT_S` (mọi API tương thích OpenAI); provider khác hẳn: `adapters/models/` | Code | S12, `tests/unit/test_models.py` |
 | Xác thực (API key → JWT) | `api/auth.py` | Mọi lớp khác | `test_auth_enabled_requires_keys` |
 
 Quy tắc phụ thuộc giữa các package được kiểm tra tự động bởi `tests/architecture/test_import_rules.py`.

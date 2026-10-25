@@ -65,6 +65,16 @@ class CitationFinalizer:
         return text
 
 
+class AnswerPrefixFinalizer:
+    """Markdown a tool streamed ahead of the model's answer (`ctx.answer_prefix`) stays at its start once the
+    answer is persisted, so a reload shows what was streamed. Skipped when the model copied it anyway."""
+
+    async def __call__(self, ctx: RunContext, text: str) -> str:
+        # A heading the model may write itself does not identify a block; its longest line (a table row) does.
+        blocks = [block for block in ctx.answer_prefix if max(block.splitlines(), key=len) not in text]
+        return "\n\n".join([*blocks, text]) if blocks else text
+
+
 class DiagramFinalizer:
     """Diagrams drawn with `architecture_diagram` always reach the answer: a block the model did not copy
     is appended (and streamed). Runs before `CitationFinalizer` so the step table's citations count."""

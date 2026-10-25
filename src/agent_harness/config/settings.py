@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     model_temperature: float = 0.2
     #: Retries of a model call that failed transiently (connection dropped mid-stream, timeout, 429, 5xx).
     model_max_retries: int = Field(2, ge=0, le=5)
+    #: Longest silence (no bytes) inside one model response before it counts as failed and is retried or
+    #: handed to a fallback model. Long enough for a model reasoning over a large prompt before its first token.
+    model_idle_timeout_s: float = Field(90, gt=0)
     #: Cap on one model call's output; ends a repetition loop the guard misses. None = provider default.
     model_max_output_tokens: int | None = Field(8192, ge=256)
     #: Abort and retry a call whose output leaks the model's reasoning or loops (adapters/models/output_guard.py).

@@ -307,7 +307,7 @@ def build_source_tools(*, sources: SourceRegistry, github: RepositoryReader, blo
         return ToolOutput("\n".join(parts), tuple(ev.labels))
 
     return [
-        ToolSpec("github_repo_overview", "Read a GitHub repo's metadata, README, config/dependency files and a structure summary. Call this first for any repo.", RepoInput, repo_overview, frozenset({SOURCE}), url_field="url", untrusted_output=True),
+        ToolSpec("github_repo_overview", "Read a GitHub repo's metadata, README, config/dependency files and a structure summary. Call this first for code-level questions (modules, design, flows); for which services run and how they connect, call github_system_map first.", RepoInput, repo_overview, frozenset({SOURCE}), url_field="url", untrusted_output=True),
         ToolSpec("github_list_tree", "List files/directories of a GitHub repo under a path.", TreeInput, list_tree, frozenset({SOURCE}), url_field="url", untrusted_output=True),
         ToolSpec("github_read_file", "Read a file (or a line range) from a GitHub repo, with line numbers.", FileInput, read_file, frozenset({SOURCE}), url_field="url", untrusted_output=True),
         ToolSpec("github_search_code", "Search the whole repository for text or a regex; returns matching lines with line numbers. Use it to find definitions, call sites and config keys.", SearchInput, search_code, frozenset({SOURCE}), url_field="url", untrusted_output=True),

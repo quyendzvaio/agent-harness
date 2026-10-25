@@ -28,8 +28,8 @@ def test_overview_has_the_five_parts_in_order(compose):
     cites = Cites()
     text = render(compose, cites)
     assert text.startswith("Kiến trúc ĐƯỢC KHAI BÁO từ docker-compose.yml, docker-compose.full.yml. Chưa đối chiếu với runtime.")
-    headings = [line for line in text.splitlines() if line.startswith("## ")]
-    assert [h[:5] for h in headings] == ["## 1.", "## 2.", "## 3.", "## 4."]
+    headings = [line[:5] for line in text.splitlines() if line.startswith("## ")]
+    assert headings == ["## 1.", "## 2.", "## 3.", "## 4.", "## Đọ"]  # the four parts, then what to read
     assert "variant: base (docker-compose.yml), full (docker-compose.full.yml)" in text
     assert "| tên | loại | nơi chạy | entrypoint | bằng chứng | tin cậy |" in text
     assert "| tin cậy khớp | tin cậy địa chỉ |" in text  # the two confidence columns are separate
@@ -116,3 +116,14 @@ def test_diagram_plan_numbers_edges_from_the_boundary_and_marks_inferred(compose
     base_nodes, base_edges = diagram_plan(compose, Cites(), variant="base")
     base_labels = {n.id: n.label for n in base_nodes}
     assert ("worker", "api") not in {(base_labels[e.source], base_labels[e.target]) for e in base_edges}
+
+
+def test_overview_lists_code_windows_to_read_for_inferred_edges_and_gaps(compose):
+    text = render(compose, Cites())
+    section = text.split("## Đọc để kiểm chứng", 1)[1].split("\n\n", 1)[0]
+    lines = [line for line in section.splitlines() if line.startswith("- path=")]
+    assert 0 < len(lines) <= 8
+    paths = [line.split()[1].removeprefix("path=") for line in lines]
+    assert "frontend/lib/api.js" in paths  # the browser edge resolves through localhost:8000
+    assert "services/worker/worker.py" in paths  # the dead call /internal/nope (Q9-I3)
+    assert not any(p.endswith((".yml", ".yaml", ".md")) or "Dockerfile" in p for p in paths)  # manifests are quoted already

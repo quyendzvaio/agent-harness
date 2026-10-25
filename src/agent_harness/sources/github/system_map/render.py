@@ -8,6 +8,7 @@ counts as having read the file.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 
@@ -241,13 +242,49 @@ def _env_rows(smap: SystemMap, names: set[str], cite: Cite) -> list[str]:
     return rows
 
 
+_MANIFEST_FILE = re.compile(r"(^|/)(Dockerfile[^/]*|[^/]+\.ya?ml|Procfile|Makefile|package\.json|\.env[^/]*)$")
+READ_WINDOW = 15
+MAX_READS = 8
+
+
+def verify_reads(
+    smap: SystemMap, nodes: list[Process], edges: list[Channel], names: set[str] | None, limit: int = MAX_READS
+) -> list[tuple[str, int, int, str]]:  # fmt: skip
+    """Code windows worth reading to confirm the map: INFERRED edges first, then gaps. Manifest lines are skipped
+    (the map already quotes them); nearby lines of one file merge into one window."""
+    wanted: list[tuple[Ev, str]] = []
+    for group in grouped(edges):
+        first = group[0]
+        if weakest(*(c.match for c in group), *(c.addr for c in group)) != INFERRED:
+            continue
+        for ev in (first.client_ev, first.server_ev):
+            if ev is not None:
+                wanted.append((ev, f"cạnh INFERRED {first.src} → {first.dst} ({first.kind}): {first.reason or 'xác nhận hai đầu'}"))
+    for gap in smap.gaps:
+        if gap.ev is not None and (names is None or any(n in gap.detail for n in names)):
+            wanted.append((gap.ev, f"{gap.rule}: {gap.detail}"))
+    windows: list[list] = []
+    for ev, why in wanted:
+        if not ev.path or _MANIFEST_FILE.search(ev.path) or ev.path.endswith((".md", ".proto")):
+            continue
+        start, end = max(1, ev.line - READ_WINDOW), ev.line + READ_WINDOW
+        same = next((w for w in windows if w[0] == ev.path and start <= w[2] and end >= w[1]), None)
+        if same is not None:
+            same[1], same[2] = min(same[1], start), max(same[2], end)
+            continue
+        if len(windows) < limit:
+            windows.append([ev.path, start, end, why[:140]])
+    return [(path, start, end, why) for path, start, end, why in windows]
+
+
 # --- sections ---------------------------------------------------------------------------------------------
 
 
 def render(
     smap: SystemMap, cite: Cite, *, section: str = "overview", variant: str | None = None, process: str | None = None,
-    limit: int = 60,
+    limit: int = 60, footer: bool = True,
 ) -> str:  # fmt: skip
+    """`footer=False`: the overview without what-to-read-next, as shown to the user."""
     if section not in SECTIONS:
         raise InvalidInput(f"section must be one of {', '.join(SECTIONS)}")
     nodes, edges = select(smap, variant, process)
@@ -280,8 +317,15 @@ def render(
         unverified = sum(1 for _, _, ok in smap.hypotheses if not ok)
         if smap.hypotheses:
             out += ["", f"Giả thuyết từ README/docs: {len(smap.hypotheses)} claim, {unverified} chưa kiểm được (section=hypotheses)."]
-        out += ["", "Tiếp theo: cạnh/node INFERRED và mỗi khoảng trống → đọc đúng file:dòng (github_read_file start_line/end_line) "
-                    "trước khi khẳng định; section=channels|env|gaps|stores với process=<tên> để xem chi tiết."]  # fmt: skip
+        if not footer:
+            return "\n".join(out)
+        reads = verify_reads(smap, nodes, edges, names if process else None)
+        out += ["", "## Đọc để kiểm chứng (cạnh INFERRED và khoảng trống trong code; chép nguyên tham số vào github_read_file)"]
+        out += [f"- path={path} start_line={start} end_line={end} — {why}" for path, start, end, why in reads]
+        if not reads:
+            out.append("- (không có: mọi cạnh EXTRACTED và khoảng trống chỉ nằm trong manifest)")
+        out += ["", "Tiếp theo: đọc các khoảng trên (không đọc cả file, không đọc README để hiểu kiến trúc); chi tiết thêm: "
+                    "section=channels|env|stores luôn kèm process=<tên>."]  # fmt: skip
     elif section == "processes":
         out += ["", f"## Node{focus}", *_table(("tên", "loại", "nơi chạy", "entrypoint", "bằng chứng", "tin cậy"),
                                                _process_rows(nodes, cite), limit, more)]  # fmt: skip
@@ -380,7 +424,7 @@ def diagram_plan(
         first = group[0]
         inferred = weakest(*(c.match for c in group), *(c.addr for c in group)) == INFERRED
         suffix = " (?)" if inferred else ""
-        label = f"{first.kind}: {_group_detail(group)}"
+        label = f"{first.kind}: {_group_detail(group)}".replace("`", "")  # Mermaid reads backticks as markdown
         label = label[: max_label - len(suffix) - 1] + "…" if len(label) + len(suffix) > max_label else label
         evidence = tuple(dict.fromkeys(e for e in (cite_channel(cite, c) for c in group[:3]) if e))
         plan_edges.append(PlanEdge(str(step), ids[first.src], ids[first.dst], label + suffix, evidence,

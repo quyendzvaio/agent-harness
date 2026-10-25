@@ -241,3 +241,41 @@ def test_large_repo_builds_in_seconds():
     smap = build_system_map(files)
     assert time.perf_counter() - started < 3.0
     assert "api" in smap.processes
+
+
+def test_only_required_reads_without_a_value_are_q9_gaps():
+    code = """\
+import os
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    access_token_minutes: int = 60 * 8
+    region: str
+
+
+LIMIT = int(os.getenv("LIMIT", "50"))
+LABEL = os.getenv("LABEL", USER or "mailbox")
+KEY = os.getenv("PRIMARY_KEY") or os.getenv("SECONDARY_KEY", "")
+STATE = os.getenv("STATE", "")
+OPTIONAL = os.getenv("OPTIONAL")
+TOKEN = os.environ["TOKEN"]
+try:
+    if os.environ["TRACING"] == "1":
+        pass
+except KeyError:
+    pass
+"""
+    files = {**compose_repo.FILES, "services/worker/extra.py": code}
+    unset = {g.split(" đọc bắt buộc ")[1].split()[0] for g in gaps(build_system_map(files), "Q9-I1") if "worker" in g}
+    assert unset == {"TOKEN", "REGION"}  # environ[...] outside try/except KeyError, and a required settings field
+    bindings = {b.var: b for b in build_system_map(files).bindings if b.process == "worker"}
+    assert bindings["OPTIONAL"].note.startswith("không đặt, không mặc định")  # yields None: no edge, not a gap
+    assert bindings["STATE"].value == ""  # an empty default is a value
+    assert "SECONDARY_KEY" not in unset and "ACCESS_TOKEN_MINUTES" not in unset
+
+
+def test_nodes_without_declared_topology_are_one_gap_line():
+    smap = build_system_map(docs_repo.FILES)
+    lines = gaps(smap, "Q9-I6")
+    assert len(lines) == 1 and lines[0].startswith("2 node dev-host/external-hosted không có cạnh")

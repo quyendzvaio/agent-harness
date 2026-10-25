@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import Any
 
+import httpx2
 from langchain_core.exceptions import ModelError
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage
@@ -64,6 +65,7 @@ def openai_compatible_model(
     reasoning_effort: str | None = None,
     max_output_tokens: int | None = None,
     guard_output: bool = True,
+    idle_timeout_s: float = 90,
 ) -> BaseChatModel:
     if api_key is None:
         raise ValueError("LLM_API_KEY is required for the chat model")
@@ -75,9 +77,11 @@ def openai_compatible_model(
         temperature=temperature,
         streaming=True,
         stream_usage=True,
-        # The harness has its own turn timeout, model retry and fallback, so keep SDK retries short.
-        max_retries=1,
-        timeout=120,  # seconds
+        # The harness retries and falls back itself (ModelRetryMiddleware, ModelFallbackMiddleware); SDK retries
+        # would multiply the wait on a provider that has stalled.
+        max_retries=0,
+        # Longest silence between two bytes of a response: a stalled stream fails here, then retry/fallback.
+        timeout=httpx2.Timeout(idle_timeout_s, connect=10),
         reasoning_effort=reasoning_effort,
         # A loop the guard misses still ends here.
         max_tokens=max_output_tokens,

@@ -10,11 +10,12 @@ import posixpath
 import re
 
 from agent_harness.sources.github.system_map.catalog import Catalog
+from agent_harness.sources.github.system_map.envchain import UNSET_REQUIRED
 from agent_harness.sources.github.system_map.model import SystemMap
 from agent_harness.sources.github.system_map.repo import Repo
 
 INVARIANTS = (
-    "I1 mọi biến env code đọc có nơi đặt hoặc mặc định",
+    "I1 mọi biến env code đọc bắt buộc có nơi đặt hoặc mặc định",
     "I2 mọi route server có caller hoặc là public/vận hành",
     "I3 mọi lời gọi tới route trong repo có đầu server khớp",
     "I4 route framework ngoài repo không tính vi phạm",
@@ -35,8 +36,8 @@ def check_closure(smap: SystemMap, catalog: Catalog) -> None:
     ops = catalog.c["ops_paths"]
     # I1
     for binding in smap.bindings:
-        if binding.value is None and binding.source == "không đặt":
-            smap.gap("Q9-I1", f"{binding.process} đọc {binding.var} nhưng không manifest nào đặt và không có mặc định", binding.read_ev)
+        if binding.value is None and binding.source == UNSET_REQUIRED:  # an optional read just yields None/"" (Q3 table)
+            smap.gap("Q9-I1", f"{binding.process} đọc bắt buộc {binding.var} nhưng không manifest nào đặt và không có mặc định", binding.read_ev)
     # I2 + I4: routes of processes nobody outside can reach must have a caller
     called = {(c.dst, c.detail) for c in smap.channels}
     for route in smap.routes:
@@ -57,14 +58,21 @@ def check_closure(smap: SystemMap, catalog: Catalog) -> None:
             continue
         if missing:
             smap.gap("Q9-I5", f"store {store.name} không có {' và '.join(missing)} trong code đã quét", store.ev)
-    # I6
+    # I6 (dev-host / external-hosted nodes have no declared topology: one line for all of them, not one each)
+    undeclared = []
     for process in smap.processes.values():
         if process.is_boundary or process.where == "undeployed":
+            continue
+        if process.where in ("dev-host", "external-hosted") and process.name not in touched:
+            undeclared.append(process.name)
             continue
         if process.name not in touched:
             smap.gap("Q9-I6", f"node {process.name} ({process.kind}) không có cạnh nào: code chết, chưa khởi động, hoặc thiếu cạnh", process.ev)
         elif process.kind in ("http-server", "web") and not process.published and not any(c.dst == process.name for c in smap.channels):
             smap.gap("Q9-I6", f"{process.name} là {process.kind} nhưng không ai gọi tới và không publish cổng", process.ev)
+    if undeclared:
+        shown = ", ".join(undeclared[:8]) + (f" (+{len(undeclared) - 8})" if len(undeclared) > 8 else "")
+        smap.gap("Q9-I6", f"{len(undeclared)} node dev-host/external-hosted không có cạnh (repo không khai báo topology cho chúng): {shown}")
     # I7
     for process in smap.processes.values():
         if process.where == "undeployed":

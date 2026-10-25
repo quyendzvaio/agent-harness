@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from agent_harness.capabilities.system_map_tools import SystemMaps, citer
 from agent_harness.domain.errors import CapabilityUnavailable, InvalidInput
+from agent_harness.domain.events import EventType
 from agent_harness.domain.evidence import Evidence
 from agent_harness.domain.sources import SourceKind
 from agent_harness.harness.context import RunContext
@@ -74,9 +75,16 @@ def build_diagram_tools(maps: SystemMaps | None = None) -> list[ToolSpec]:
             )  # fmt: skip
             counts = {"nodes": len(args.nodes), "edges": len(args.edges)}
         ctx.diagrams.append(markdown)
+        # Streamed now, at the start of the answer: the user sees it even if the model is slow to write the rest
+        # (or the turn runs out of time), and the model has no reason to re-type it.
+        heading = "## Sơ đồ kiến trúc" if ctx.intent.language == "vi" else "## Architecture diagram"
+        block = f"{heading}\n\n{markdown}"
+        ctx.answer_prefix.append(block)
+        ctx.emit(EventType.TOKEN, text=block + "\n\n", message_id=f"diagram-{len(ctx.diagrams)}")
         return ToolOutput(
-            "Diagram ready. Copy the block below into your answer verbatim (the mermaid code and the step table):\n\n"
-            + markdown,
+            "Diagram drawn and ALREADY INSERTED into the answer shown to the user (mermaid code + step table below, for "
+            "reference). Do NOT copy it and do NOT repeat earlier answers or tables: write only a short explanation of "
+            "the numbered steps, citing [E#].\n\n" + markdown,
             data={"source": mode, **counts},
         )
 

@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from agent_harness.domain.errors import InvalidInput
+from agent_harness.domain.events import EventType
 from agent_harness.domain.sources import SourceKind
 from agent_harness.harness.context import RunContext
 from agent_harness.harness.tools.spec import SOURCE, ToolOutput, ToolSpec
@@ -15,6 +16,16 @@ from agent_harness.sources.github.repository_reader import RepositoryReader
 from agent_harness.sources.github.system_map import SystemMap
 from agent_harness.sources.github.system_map.render import Cite, render
 from agent_harness.sources.registry import SourceRegistry
+
+#: Skills whose answer is the map's five parts: the tables are streamed into the answer by the tool itself, so the
+#: model writes only what it verified and its assessment (re-typing ~6k characters of tables took a slow model minutes).
+TABLES_IN_ANSWER = frozenset({"github-system-architecture"})
+PREFIX_MESSAGE_ID = "system_map"
+_IN_ANSWER = (
+    "\n\n---\nĐÃ CHÈN VÀO CÂU TRẢ LỜI cho người dùng: dòng đầu + 4 phần trên (node, cạnh, sở hữu dữ liệu, khoảng "
+    "trống), nguyên văn và kèm [E#]. KHÔNG chép lại bảng nào. Câu trả lời của bạn chỉ gồm: `## Kiểm chứng` (mỗi dòng "
+    "đã đọc: node/cạnh/khoảng trống → xác nhận hay sửa, mức tin cậy đúng, [E#] của lần đọc) và `## Nhận định của agent`."
+)
 
 Section = Literal["overview", "processes", "channels", "stores", "env", "gaps", "hypotheses"]
 
@@ -69,6 +80,16 @@ def build_system_map_tools(maps: SystemMaps) -> list[ToolSpec]:
             process=args.process or None, limit=args.limit,
         )  # fmt: skip
         data = {"processes": len(smap.processes), "channels": len(smap.channels), "gaps": len(smap.gaps), "runtime": smap.has_runtime}
+        skill = ctx.active_skill.name if ctx.active_skill else None
+        if args.section == "overview" and skill in TABLES_IN_ANSWER and not ctx.answer_prefix:
+            block = render(
+                smap, citer(ctx, target, labels), section="overview", variant=args.variant or None,
+                process=args.process or None, limit=args.limit, footer=False,
+            )  # fmt: skip
+            ctx.answer_prefix.append(block)
+            ctx.emit(EventType.TOKEN, text=block + "\n\n", message_id=PREFIX_MESSAGE_ID)
+            text += _IN_ANSWER
+            data["in_answer"] = True
         return ToolOutput(text, tuple(labels), data=data)
 
     return [

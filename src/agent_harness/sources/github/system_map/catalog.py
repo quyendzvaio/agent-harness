@@ -23,6 +23,8 @@ class Pattern:
     regex: re.Pattern[str]
     requires: re.Pattern[str] | None = None
     prefix_arg: re.Pattern[str] | None = None
+    #: env_readers: the read fails when the variable is unset (`os.environ["X"]`, Go `mustMapEnv`).
+    required: bool = False
 
     def applies(self, path: str) -> bool:
         return posixpath.splitext(path)[1] in self.exts
@@ -65,6 +67,7 @@ def _patterns(items: list[dict[str, Any]], flags: int = re.M) -> tuple[Pattern, 
             _compile(item["pattern"], flags),
             _compile(item["requires"]) if item.get("requires") else None,
             _compile(item["prefix_arg"]) if item.get("prefix_arg") else None,
+            bool(item.get("required")),
         )
         for item in items
     )

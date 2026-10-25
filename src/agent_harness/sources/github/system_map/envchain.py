@@ -58,6 +58,14 @@ class Read:
     default: str | None
     ev: Ev
     name: str | None = None  # identifier the value is assigned to
+    #: A default exists but is not a literal (`60 * 8`, `IMAP_USER or "mailbox"`, `getenv("A") or getenv("B")`).
+    fallback: bool = False
+    #: The read fails when the variable is unset; an optional read without a default just yields None/"".
+    required: bool = False
+
+    @property
+    def has_default(self) -> bool:
+        return self.default is not None or self.fallback
 
 
 @dataclass(slots=True)
@@ -97,12 +105,46 @@ def scan_env(repo: Repo, catalog: Catalog, paths: list[str]) -> EnvIndex:
                 if not var:
                     continue
                 default = _literal(groups.get("default"))
+                fallback = default is not None and not _is_literal(groups.get("default") or "")
+                fallback = fallback or bool(_FALLBACK_AFTER.match(text, match.end()))
                 name = groups.get("name")
-                index.add(Read(var, default, repo.ev(path, repo.line_of(path, match.start())), name))
+                ev = repo.ev(path, repo.line_of(path, match.start()))
+                required = pattern.required and not fallback and not _guarded(repo.lines(path), ev.line)
+                index.add(Read(var, None if fallback else default, ev, name, fallback, required=required))
         if path.endswith(".py") and "BaseSettings" in text:
             _settings_fields(repo, path, index)
     _propagate(repo, paths, index)
     return index
+
+
+#: `getenv("A") or ...`, `process.env.A || ...`, `?? ...`: the read falls back to something else when unset.
+_FALLBACK_AFTER = re.compile(r"\s*\)?\s*(?:or\b|\|\||\?\?)")
+_NUMBER = re.compile(r"^-?\d+(\.\d+)?$")
+
+
+_CATCHES_MISSING = re.compile(r"^\s*except\s*(?:\(?[^:]*\b(?:KeyError|LookupError|Exception)\b[^:]*)?:")
+
+
+def _guarded(lines: list[str], line: int, back: int = 8) -> bool:
+    """`os.environ["X"]` inside `try:` ... `except KeyError:` is an optional read."""
+
+    def indent(text: str) -> int:
+        return len(text) - len(text.lstrip())
+
+    here = indent(lines[line - 1])
+    for i in range(line - 2, max(-1, line - 2 - back), -1):
+        if lines[i].strip() == "try:" and indent(lines[i]) < here:
+            level = indent(lines[i])
+            for j in range(line, len(lines)):
+                if lines[j].strip() and indent(lines[j]) <= level:
+                    return bool(_CATCHES_MISSING.match(lines[j]))
+            return False
+    return False
+
+
+def _is_literal(text: str) -> bool:
+    text = text.strip()
+    return (text[:1] in "\"'`" and text[-1:] == text[:1] and len(text) >= 2) or bool(_NUMBER.match(text))
 
 
 def _literal(text: str | None) -> str | None:
@@ -129,10 +171,11 @@ def _settings_fields(repo: Repo, path: str, index: EnvIndex) -> None:
             attr = stmt.target.id
             if attr == "model_config":
                 continue
-            default, alias = _field_default(stmt.value)
+            default, alias, fallback = _field_default(stmt.value)
             var = alias or (prefix + attr).upper()
             index.settings[attr] = var
-            index.reads.setdefault(var, []).append(Read(var, default, repo.ev(path, stmt.lineno), f"settings.{attr}"))
+            required = default is None and not fallback
+            index.reads.setdefault(var, []).append(Read(var, default, repo.ev(path, stmt.lineno), f"settings.{attr}", fallback, required))
 
 
 def _name(node: ast.expr) -> str:
@@ -153,22 +196,28 @@ def _env_prefix(cls: ast.ClassDef) -> str:
     return ""
 
 
-def _field_default(value: ast.expr | None) -> tuple[str | None, str | None]:
+def _field_default(value: ast.expr | None) -> tuple[str | None, str | None, bool]:
+    """(literal default, env alias, has a non-literal default). `x: T = None` is a default (unset → None)."""
     if value is None:
-        return None, None
+        return None, None, False
     if isinstance(value, ast.Constant):
-        return (None if value.value is None else str(value.value)), None
+        return (None if value.value is None else str(value.value)), None, value.value is None
     if isinstance(value, ast.Call) and _name(value.func) == "Field":
-        default = alias = None
-        if value.args and isinstance(value.args[0], ast.Constant):
-            default = value.args[0].value
+        default: object = ...
+        alias = None
+        if value.args:
+            default = value.args[0].value if isinstance(value.args[0], ast.Constant) else None
         for kw in value.keywords:
-            if kw.arg == "default" and isinstance(kw.value, ast.Constant):
-                default = kw.value.value
+            if kw.arg == "default":
+                default = kw.value.value if isinstance(kw.value, ast.Constant) else None
+            if kw.arg == "default_factory":
+                default = None
             if kw.arg in ("alias", "validation_alias", "env") and isinstance(kw.value, ast.Constant):
                 alias = str(kw.value.value)
-        return (None if default is None or default is ... else str(default)), alias
-    return None, None
+        if default is ...:
+            return None, alias, False  # required field
+        return (None if default is None else str(default)), alias, default is None
+    return None, None, True  # an expression: `60 * 8`, `[]`, `Path(...)`
 
 
 _ASSIGN = re.compile(r"^\s*(?:export\s+)?(?:const\s+|let\s+|var\s+)?(?P<name>[A-Za-z_$][\w$]*)\s*(?::[^=\n]+)?=\s*(?P<expr>[^=\n].*)$", re.M)
@@ -226,7 +275,7 @@ def values_for(process: Process, var: str, index: EnvIndex, env_example: dict[st
         value, ev = env_example[var]
         return [EnvValue(value, ev, "env-example (mẫu, chưa thấy nơi đặt)", INFERRED)]
     for read in index.reads.get(var, []):
-        if read.default:
+        if read.default is not None:
             return [EnvValue(read.default, read.ev, "mặc định trong code, chưa thấy nơi đặt", INFERRED)]
     return []
 
@@ -318,6 +367,10 @@ def resolve_host(address: Address, smap: SystemMap, value_ev: Ev) -> Resolution:
     return Resolution(None, INFERRED, f"host `{host}` không khớp service/alias nào")
 
 
+UNSET = "không đặt"
+UNSET_REQUIRED = "không đặt (bắt buộc)"
+
+
 def build_bindings(
     smap: SystemMap, repo: Repo, indexes: dict[str, EnvIndex], env_example: dict[str, tuple[str, Ev]]
 ) -> None:
@@ -333,9 +386,12 @@ def build_bindings(
                 read_ev = process.ev
             values = values_for(process, var, index, env_example)
             if not values:
-                if reads and not any(r.default for r in reads):
-                    smap.bindings.append(Binding(name, var, None, "không đặt", None, read_ev, INFERRED,
-                                                 note="code đọc nhưng không manifest nào đặt và không có mặc định"))  # fmt: skip
+                if reads and not any(r.has_default for r in reads):
+                    if any(r.required for r in reads):
+                        source, note = UNSET_REQUIRED, "code đọc bắt buộc nhưng không manifest nào đặt và không có mặc định"
+                    else:
+                        source, note = UNSET, "không đặt, không mặc định → None/rỗng: cạnh không tồn tại ở cấu hình này"
+                    smap.bindings.append(Binding(name, var, None, source, None, read_ev, INFERRED, note=note))
                 continue
             seen: set[str | None] = set()
             for value in values:
